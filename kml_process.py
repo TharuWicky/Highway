@@ -1,4 +1,6 @@
 from lxml import etree as parser
+
+
 def load_kml_file(file):
     tree = parser.parse(file)
     root = tree.getroot()
@@ -16,11 +18,12 @@ def load_kml_file(file):
     coords_str = coords_str.strip()
 
     # Split the string by spaces first, then by commas
-    coords_list = [coord.split(',') for coord in coords_str.split()]
+    coords_list = [coord.split(",") for coord in coords_str.split()]
 
     # Convert the coordinates into pairs of (longitude, latitude) tuples, ignoring the z-coordinate
     formatted_coords = [(float(coord[0]), float(coord[1])) for coord in coords_list]
     return formatted_coords
 
-with open("fyp1.kml", "rb") as file:
-    print(load_kml_file(file))
+
+# with open("fyp1.kml", "rb") as file:
+#     print(load_kml_file(file))
