@@ -28,10 +28,10 @@ def find_average_irradiation_data(irradiation_data):
     return sum(value for _, value in irradiation_data.items()) / len(irradiation_data)
 
 
-# print(
-#     find_average_irradiation_data(
-#         get_monthly_solar_irradiation(
-#             latitude=37.7749, longitude=-122.4194, start_year=2020, end_year=2020
-#         )
-#     )
-# )
+print(
+    find_average_irradiation_data(
+        get_monthly_solar_irradiation(
+            latitude=37.7749, longitude=-122.4194, start_year=2020, end_year=2020
+        )
+    )
+)
