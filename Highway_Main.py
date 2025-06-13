@@ -1,14 +1,18 @@
 import marimo
 
 __generated_with = "0.13.13"
-app = marimo.App(width="columns", layout_file="layouts/Highway_Main.grid.json")
+app = marimo.App(
+    width="columns",
+    app_title="WattWay",
+    layout_file="layouts/Highway_Main.grid.json",
+)
 
 with app.setup:
     from lxml import etree as parser
     import folium
     import marimo as mo
     import io
-    import matplotlib.pyplot as plt
+    from matplotlib import pyplot as plt
     import polars as pd
     from tqdm.notebook import tqdm
 
@@ -32,18 +36,24 @@ def _(file_upload_widget, load_kml_file):
     file_content = file_upload_widget.value[0].contents
     file_object = io.BytesIO(file_content)
     points = load_kml_file(file_object)
-    print(points)
     return (points,)
 
 
 @app.cell
+def _():
+    mo.md(
+        r"""
+    # You have Selected the Following Points
+
+    * **Click** on a point to **see its cordinates**
+    """
+    )
+    return
+
+
+@app.cell
 def _(points):
-    _kw = {"color": "#ff0000", "fill": True, "radius": 3}
-    mean_point = (sum(p[1] for p in points)/len(points),sum(p[0] for p in points)/len(points))
-    m = folium.Map(location=(mean_point),zoom_start=12)
-    for point in points:
-        folium.CircleMarker(location=(point[1],point[0]),**_kw).add_to(m)
-    m
+    folium_plot_points(points=points,radius=5,popup=(str(p) for p in points))
     return
 
 
@@ -58,8 +68,8 @@ def _():
         '''
     )
 
-    _start_year = mo.ui.dropdown( options=tuple(range(2000,2026)),value='2025',searchable=True)
-    _end_year = mo.ui.dropdown( options=tuple(range(2000,2026)),value='2025',searchable=True)
+    _start_year = mo.ui.dropdown( options=tuple(range(2000,2025)),value='2024',searchable=True)
+    _end_year = mo.ui.dropdown( options=tuple(range(2000,2025)),value='2024',searchable=True)
 
     year_form = _year_form.batch(start_year=_start_year, end_year=_end_year).form()
     year_form
@@ -73,6 +83,7 @@ def _(
     points,
     year_form,
 ):
+    mo.stop(year_form.value is None)
     start_year = year_form.value["start_year"]
     end_year = year_form.value["start_year"]
     mo.stop(start_year is None or end_year is None)
@@ -114,12 +125,50 @@ def _():
     return color_interpolate, normalize_solar_data
 
 
+@app.cell(hide_code=True)
+def _():
+    mo.md(
+        r"""
+    # Optimality of Points
+    * Optimality of the points are colour coded. **More** optimal points are **Red**, while **Less** optimal points are **Red**.
+
+    * **Hover over** a point to find the average **solar insolation**
+
+    * **Click** on a Point to see the **Cordinates**
+    """
+    )
+    return
+
+
 @app.cell
 def _(color_interpolate, normalize_solar_data, points, solar_data):
     max_solar_data = max(solar_data.values())
     _interpolated_colors = map(color_interpolate, normalize_solar_data(tuple(solar_data[point] for point in points)))
-    folium_plot_points(points, colors=_interpolated_colors, fill=True, radius=3, zoom_start=12)
-    # tuple(_interpolated_colors)
+    folium_plot_points(points, colors=_interpolated_colors, fill=True, radius=4, zoom_start=12,tooltip=(str(solar_data[point]) for point in points),popup=(str(p) for p in points))
+    return
+
+
+@app.cell
+def _(points):
+    points_selected_ui = mo.ui.dropdown(label="Number of Optimal Points:", full_width=True,options=tuple(i for i in range(1,len(points)+1)),value=1)
+    num_points_form = mo.md(
+        '''
+        # How many Optimal Points do you need? 
+        {points_selected_ui}
+        '''
+    ).batch(points_selected_ui=points_selected_ui).form()
+    num_points_form
+    return (num_points_form,)
+
+
+@app.cell
+def _(num_points_form, solar_data):
+    mo.stop(num_points_form.value is None)
+    p_i_list = list(solar_data.items())
+    p_i_list.sort(key=lambda x:x[1],reverse=True)
+    table_rows = [{"point": f"{point[0]:.6f}, {point[1]:.6f}","solar insolation":f"{ins:.2f}"} for (point,ins) in p_i_list]
+    number_of_points = num_points_form.value["points_selected_ui"]
+    mo.ui.table(table_rows[:number_of_points])
     return
 
 
@@ -190,18 +239,38 @@ def _():
 
 
 @app.function
-def folium_plot_points(points, colors="#ff0000", fill=True, radius=3, zoom_start=12
+def folium_plot_points(points, colors=None, fill=True, radius=3, zoom_start=12,tooltip=None,popup = None
 ):
     mean_point = (
         sum(p[1] for p in points) / len(points),
         sum(p[0] for p in points) / len(points),
     )
     m = folium.Map(location=(mean_point), zoom_start=zoom_start)
-    for point,color in zip(points,colors):
+    if(tooltip is None):
+        tooltip = (None for _ in points)
+    if(popup is None):
+        popup = (None for _ in points)
+    if(colors is None):
+        colors = ("#008800" for _ in points)
+    for point,color,t,pop in zip(points,colors,tooltip,popup):
         folium.CircleMarker(
-            location=(point[1], point[0]), color=color, fill=fill, radius=radius
+            location=(point[1], point[0]), color=color, fill=fill,fill_opacity=1, radius=radius,tooltip=t,popup=pop
         ).add_to(m)
     return m
+
+
+@app.cell
+def _():
+    mo.md(
+        r"""
+    <br></br>
+    <br></br>
+    <br></br>
+    <br></br>
+    <br></br>
+    """
+    )
+    return
 
 
 if __name__ == "__main__":
