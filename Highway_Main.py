@@ -45,7 +45,7 @@ def _():
         r"""
     # You have Selected the Following Points
 
-    * **Click** on a point to **see its cordinates**
+    * **Click** on a point to **see its Cordinates**.
     """
     )
     return
@@ -130,11 +130,11 @@ def _():
     mo.md(
         r"""
     # Optimality of Points
-    * Optimality of the points are colour coded. **More** optimal points are **Red**, while **Less** optimal points are **Red**.
+    * Optimality of the points are colour coded. **More** optimal points are **Red**, while **Less** optimal points are **Blue**.
 
-    * **Hover over** a point to find the average **solar insolation**
+    * **Hover over** a point to find the average **Solar Insolation**,
 
-    * **Click** on a Point to see the **Cordinates**
+    * **Click** on a Point to see the **Cordinates**.
     """
     )
     return
