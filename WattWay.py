@@ -10,225 +10,221 @@ with app.setup:
     from lxml import etree as parser
     import math
     import osmnx as ox
-    from shapely.geometry import Polygon,Point
+    from shapely.geometry import Polygon,Point,LineString
     import geopandas as gpd
     import matplotlib.pyplot as plt
 
 
 @app.cell
 def _():
-    kml_file_upload = mo.ui.file(kind='area')
-    return (kml_file_upload,)
-
-
-@app.cell
-def _(kml_file_upload, kml_map):
-    kml_file_input = mo.md(
-        f'''
-           ## Upload KML File 
-            {kml_file_upload}
-
-            <h2>Visualization of the Points</h2>
-
-            <center>{kml_map.style(max_height='600px',max_width='900px',overflow='auto') if kml_map else mo.Html("<h3>No KML File Uploaded</h3>").center()}</center>
-
+    single_point_form = mo.md(
         '''
+        # Single Point Selection
+
+        Latitude: {lat}
+    
+        Longitude: {lon}
+        '''
+    ).batch(lat=mo.ui.text(),lon=mo.ui.text()).form()
+
+
+    kml_form = mo.md(
+        '''
+        # Upload KML File of Area of Interest
+
+        {file}
+        '''
+    ).batch(file=mo.ui.file(kind='area')).form()
+
+    input_points = mo.ui.tabs(
+        {"Single Point": single_point_form,
+        "KML File": kml_form
+        }
     )
-    kml_file_input
-    return (kml_file_input,)
-
-
-@app.cell
-def _(kml_file_upload, load_kml_file):
-    kml_points=None
-    if(kml_file_upload.value):
-        _file_content = kml_file_upload.value[0].contents
-        _file_object = io.BytesIO(_file_content)
-        kml_points = load_kml_file(_file_object)
-    return (kml_points,)
+    input_points
+    return input_points, kml_form, single_point_form
 
 
 @app.cell
 def _():
-    single_point_lat_input = mo.ui.text(
-        label='Latitude',
-        placeholder='Enter latitude',
-        value='',
-
+    get_optimal_point,set_optimal_point = mo.state(None)
+    get_area_select, set_area_select = mo.state(None)
+    return (
+        get_area_select,
+        get_optimal_point,
+        set_area_select,
+        set_optimal_point,
     )
-    single_point_long_input = mo.ui.text(
-        label='Latitude',
-        placeholder='Enter longitude',
-        value='',
-
-    )
-    return single_point_lat_input, single_point_long_input
-
-
-@app.cell
-def _(single_point_lat_input, single_point_long_input):
-    def float_or_none(s):
-        try:
-            return float(s)
-        except ValueError:
-            return None
-
-    single_point_lat = float_or_none(single_point_lat_input.value)
-    single_point_long = float_or_none(single_point_long_input.value)
-
-    if(single_point_lat is None or single_point_long is None):
-        single_point = None
-    else:
-        single_point = (single_point_long, single_point_lat)
-    single_point
-    return (single_point,)
-
-
-@app.cell
-def _(single_point_lat_input, single_point_long_input, single_point_map):
-    val = (single_point_lat_input.value == 'hello')
-    single_point_input = mo.md(
-        f'''
-           ## Singel Point Selection
-
-           {single_point_lat_input}
-
-           {single_point_long_input}
-
-            <h2>Visualization of the Points</h2>
-           <center>{single_point_map.style(max_height="400px",max_width="900px") if single_point_map else mo.Html("<h3>No point selected</h3>")}</center>
-
-        '''
-    )
-    single_point_input
-    return (single_point_input,)
-
-
-@app.cell
-def _(single_point):
-    single_point_map = (mo.as_html(folium_plot_points( 
-       points=(single_point,) ,colors=('#008800',), fill=True, radius=5, zoom_start=12,
-    )) if single_point else None)
-
-    return (single_point_map,)
-
-
-@app.cell
-def _(kml_points):
-
-    kml_map = (mo.as_html(folium_plot_points( 
-       points=kml_points ,colors=('#008800' for point in kml_points), fill=True, radius=5, zoom_start=12,
-    )) if kml_points else None)
-    return (kml_map,)
-
-
-@app.cell
-def _():
-    get_point_state,set_point_state = mo.state('KML File')
-    return get_point_state, set_point_state
 
 
 @app.cell
 def _(
-    create_bridge_output,
-    get_point_state,
-    kml_file_input,
-    set_point_state,
-    single_point_input,
+    input_points,
+    kml_form,
+    load_kml_file,
+    set_area_select,
+    set_optimal_point,
+    single_point_form,
 ):
-
-    input_stage = mo.ui.tabs(
-        {
-            'KML File': kml_file_input,
-            'Single Point': single_point_input,
-            'Bridge Find':create_bridge_output()
-        },
-        value = get_point_state(),
-        on_change = lambda x: set_point_state(x) 
-    )
-    return (input_stage,)
-
-
-@app.cell
-def _(input_stage):
-    mo.md(
-        f"""
-    # Point Selection
-    {input_stage}
-    """
-    )
+    def _():
+        set_optimal_point(None)
+        set_area_select(None)
+        if(input_points.value=='Single Point'):
+            if(not single_point_form.value):
+                return
+            
+            optimal_point = (float(single_point_form.value['lon']),
+                             float(single_point_form.value['lat']))
+            set_optimal_point(optimal_point)
+            set_area_select(None)
+        if(input_points.value=='KML File'):
+            if(not kml_form.value):
+                return
+            if(kml_form.value['file'] is None):
+                return
+            _file_content = kml_form.value['file'][0].contents
+            _file_object = io.BytesIO(_file_content)
+            polygon_points = load_kml_file(_file_object)
+            set_area_select(polygon_points)
+            set_optimal_point(None)
+    _()
     return
 
 
 @app.cell
-def _(get_point_state, kml_points):
-    print(get_point_state())
-    point_collection = None
+def _(get_area_select, get_optimal_point, input_points):
+    def _():
+        if(input_points.value == 'Single Point'):
+            optimal_point = get_optimal_point()
+            if(optimal_point is None):
+                return
+            map = folium_plot_points(
+                [optimal_point],
+                colors=["#008800"],
+                fill=True,
+                radius=10,
+                zoom_start=14,
+                tooltip=["Optimal Point"],
+                popup=["Optimal Point"]
+            )
+            return mo.iframe(map.get_root().render())
+        if(input_points.value == "KML File"):
+            polygon_points = get_area_select()
+            if(polygon_points is None):
+                return
+            map = folium_draw_polygon(
+                polygon_points,
+                color='blue',
+                fill=True,
+                fill_opacity=0.5,
+                zoom_start=14
+            )
+            return mo.iframe(map.get_root().render())
+        return None
 
-    if(get_point_state() == 'KML File'):
-        point_collection = kml_points
+    mo.md(f'''
+    # Input Visualization
 
+    {_()}
+    ''')
     return
+
+
+@app.cell
+def _(get_area_select):
+    def _post_processing():
+        if(get_area_select() is None):
+            return
+        radio =  mo.ui.radio(
+            ["Choose Area as Points","Find Bridges in Area"]
+        )
+        form = mo.md(
+            '''
+            # Area Post Processing
+
+            {radio}
+            '''
+        ).batch(radio=radio).form()
+        return form
+    
+    post_proc =_post_processing() 
+    post_proc
+    return (post_proc,)
 
 
 @app.cell
 def _():
-    bridge_find_kml_file = mo.ui.file(kind='area')
-    # bridge_find_kml_file
-    return (bridge_find_kml_file,)
+    get_selected_points,set_selected_points = mo.state(None)
+    return (set_selected_points,)
 
 
 @app.cell
-def _(bridge_find_kml_file, load_kml_file):
-    def calculate_bridge_points():
-        if(bridge_find_kml_file.value):
-            with mo.status.spinner(title="Loading Road Network Data") as spinner:
-                _file_content = bridge_find_kml_file.value[0].contents
-                _file_object = io.BytesIO(_file_content)
-                polygon_points = load_kml_file(_file_object)
-                _all_graph = extract_road_network_from_polygon(polygon_points)
-                _motor_graph = extract_motor_way_from_polygon(polygon_points)
-                bridges = extract_bridges_from_graph(_all_graph)
-                _,_motor_edges = ox.convert.graph_to_gdfs(_motor_graph)
-                m = _motor_edges.explore(style_kwds=dict(color='black'))
-                bridges_map = bridges.explore(m=m,style_kwds=dict(color='red',weight=5))
+def _(get_area_select, post_proc, set_selected_points):
+    def _():
+        if(post_proc.value is None):
+            return
+        if(post_proc.value['radio'] == "Choose Area as Points"):
+            set_selected_points(get_area_select())
+            map = folium_plot_points(
+                get_area_select(),
+                colors=["#0000FF"] * len(get_area_select()),
+                fill=True,
+                radius=5,
+                zoom_start=14,
+                tooltip=["Area Point"] * len(get_area_select()),
+                popup=["Area Point"] * len(get_area_select())
+            ) 
+            return map
+        if(post_proc.value['radio'] == "Find Bridges in Area"):
+            map,points= calculate_bridge_points(get_area_select())
+            set_selected_points(points)
+            folium_plot_points(
+                points,
+                colors=["#00FF00"] * len(points),
+                fill=True,
+                radius=2,
+                zoom_start=14,
+                tooltip=["Bridge Point"] * len(points),
+                popup=["Bridge Point"] * len(points),
+                M=map
+            ) 
+        
+                
+            return map
 
-                return mo.iframe(bridges_map.get_root().render())
-        return None
+    _()
+
+    return
 
 
-    return (calculate_bridge_points,)
-
-
-@app.cell
-def _(bridge_find_kml_file, calculate_bridge_points):
-
-    def create_bridge_output():
-        _bridge_map = calculate_bridge_points()
-        _output = mo.md(
-           f'''
-        # Find Bridges
-        ## Upload KML File 
-            {bridge_find_kml_file}
-        ## Visualization:
-
-            <center>{_bridge_map.style(max_height="400px",max_width="900px") if _bridge_map else mo.Html("<h3>No point selected</h3>")}</center>
-           ''' 
-        )
-
-        return _output
-    output = create_bridge_output()
-    return (create_bridge_output,)
+@app.function
+def calculate_bridge_points(polygon_points):
+    with mo.status.spinner(title="Loading Road Network Data") as spinner:
+        _all_graph = extract_road_network_from_polygon(polygon_points)
+        _motor_graph = extract_motor_way_from_polygon(polygon_points)
+        bridges = extract_bridges_from_graph(_all_graph)
+        _,_motor_edges = ox.convert.graph_to_gdfs(_motor_graph)
+        m = _motor_edges.explore(style_kwds=dict(color='black'))
+        bridges_map = bridges.explore(m=m,style_kwds=dict(color='red',weight=5))
+        bridge_points = bridges['geometry'].apply(
+            lambda x: LineString(x).interpolate(0.5,normalized=True).coords[0]).tolist()
+        # return mo.iframe(bridges_map.get_root().render())
+        # bridge_points = (_motor_edges['geometry'].apply(lambda x: LineString(x).coords[0]).to_list())
+        return bridges_map,bridge_points
+    return None
 
 
 @app.function(column=1)
-def folium_plot_points(points, colors=None, fill=True, radius=3, zoom_start=12,tooltip=None,popup = None
+def folium_plot_points(points, colors=None, fill=True, radius=3, zoom_start=12,tooltip=None,popup = None,M=None
 ):
     mean_point = (
         sum(p[1] for p in points) / len(points),
         sum(p[0] for p in points) / len(points),
     )
-    m = folium.Map(location=(mean_point), zoom_start=zoom_start)
+    if(not M):
+        m = folium.Map(location=(mean_point), zoom_start=zoom_start)
+    else:
+        m = M
     if(tooltip is None):
         tooltip = (None for _ in points)
     if(popup is None):
@@ -329,9 +325,20 @@ def extract_bridges_from_graph(G):
     return bridge_edges
 
 
-@app.cell
-def _():
-    return
+@app.function
+def folium_draw_polygon(points, color='blue', fill=True, fill_opacity=0.5, zoom_start=12):
+    mean_point = (
+        sum(p[1] for p in points) / len(points),
+        sum(p[0] for p in points) / len(points),
+    )
+    m = folium.Map(location=(mean_point), zoom_start=zoom_start)
+    folium.Polygon(
+        locations=[(p[1], p[0]) for p in points],
+        color=color,
+        fill=fill,
+        fill_opacity=fill_opacity
+    ).add_to(m)
+    return m
 
 
 if __name__ == "__main__":
