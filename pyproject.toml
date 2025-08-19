@@ -5,6 +5,7 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "anywidget>=0.9.18",
     "folium>=0.12",
     "lxml>=6.0.0",
     "mapclassify>=2.10.0",

@@ -161,7 +161,7 @@ def _():
 @app.cell
 def _(get_area_select, post_proc, set_selected_points):
     def _():
-        if(post_proc.value is None):
+        if(post_proc is None or post_proc.value is None):
             return
         if(post_proc.value['radio'] == "Choose Area as Points"):
             set_selected_points(get_area_select())
@@ -339,6 +339,46 @@ def folium_draw_polygon(points, color='blue', fill=True, fill_opacity=0.5, zoom_
         fill_opacity=fill_opacity
     ).add_to(m)
     return m
+
+
+@app.cell(column=2)
+def _():
+    _system_selection = mo.ui.radio(
+        [
+            "Solar",
+            "Wind",
+            "Hybrid"
+        ]
+    )
+    system_selection_form = mo.md(
+        '''
+        # System Selection
+        {system_selection}
+    
+        '''
+    ).batch(system_selection=_system_selection).form()
+    system_selection_form
+    return (system_selection_form,)
+
+
+@app.cell
+def _():
+    get_system,set_system = mo.state(None)
+
+    return (set_system,)
+
+
+@app.cell
+def _(set_system, system_selection_form):
+    def _():
+        set_system(None)
+        if(system_selection_form is None or system_selection_form.value is None):
+            return
+        set_system(
+            system_selection_form.value['system_selection']
+        )
+    _()
+    return
 
 
 if __name__ == "__main__":
