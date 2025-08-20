@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.14.13"
+__generated_with = "0.14.17"
 app = marimo.App(width="full")
 
 with app.setup:
@@ -15,6 +15,8 @@ with app.setup:
     import matplotlib.pyplot as plt
     import pandas as pd
     import openpyxl
+
+    import base64
 
 
 @app.cell
@@ -58,9 +60,7 @@ def _():
 @app.cell
 def _(input_points):
     mo.stop(input_points.value != 'CSV File')
-    iframe_csv = mo.iframe(
-        r'''
-        <!DOCTYPE html>
+    html = r'''<!DOCTYPE html>
     <html>
     <head>
       <meta charset="utf-8">
@@ -73,6 +73,7 @@ def _(input_points):
       <link rel="stylesheet" href="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.css"/>
 
       <style>
+        html,body { height:100%; margin:0; }
         #map { height: 70vh; }
         #output {
           padding: 10px;
@@ -89,9 +90,7 @@ def _(input_points):
           border-radius: 4px;
           cursor: pointer;
         }
-        button:hover {
-          background-color: #0056b3;
-        }
+        button:hover { background-color: #0056b3; }
       </style>
     </head>
     <body>
@@ -109,17 +108,18 @@ def _(input_points):
     <script src="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.js"></script>
 
     <script>
-      // Initialize map
-      const map = L.map('map').setView([6.9271, 79.8612], 10); // Colombo
+      // Initialize map (Colombo)
+      const map = L.map('map').setView([6.9271, 79.8612], 10);
 
+      // Use crossOrigin so tiles are requested with CORS (can help in some iframe contexts)
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        maxZoom: 19
+        maxZoom: 19,
+        crossOrigin: true,
+        attribution: '&copy; OpenStreetMap contributors'
       }).addTo(map);
 
       // Add search bar using Leaflet Control Geocoder
-      L.Control.geocoder({
-        defaultMarkGeocode: true
-      }).addTo(map);
+      L.Control.geocoder({ defaultMarkGeocode: true }).addTo(map);
 
       // Layer group for drawings
       const drawnItems = new L.FeatureGroup();
@@ -135,9 +135,7 @@ def _(input_points):
           marker: false,
           circlemarker: false
         },
-        edit: {
-          featureGroup: drawnItems
-        }
+        edit: { featureGroup: drawnItems }
       });
       map.addControl(drawControl);
 
@@ -194,21 +192,19 @@ def _(input_points):
     </script>
 
     </body>
-    </html>
+    </html>'''
 
+    # Build base64 data URL
+    b64 = base64.b64encode(html.encode('utf-8')).decode('ascii')
+    data_url = 'data:text/html;base64,' + b64
 
-        '''
-    )
+    # Create an iframe that points to the data URL
+    iframe_html = f'<iframe src="{data_url}" width="100%" height="600" style="border:0;"></iframe>'
+
+    # Render in marimo
+    iframe_csv = mo.iframe(iframe_html)
     iframe_csv
 
-    mo.md(
-        f'''
-        # CSV Draw Tool for Maps
-    
-        {iframe_csv}
-
-        '''
-    )
     return
 
 
@@ -309,7 +305,7 @@ def _(get_area_select, get_optimal_point, input_points):
     if(_val):
         _output = mo.md(f'''
         # Input Visualization
-    
+
         {_val}
         ''')
     _output
@@ -376,7 +372,7 @@ def _(get_area_select, post_proc, set_selected_points):
             ) 
 
 
-            return map
+            return mo.iframe(map.get_root().render())
 
     _()
 
@@ -721,7 +717,7 @@ def _(
         start_year = year_form.value["start_year"]
         end_year = year_form.value["end_year"]
         mo.stop(start_year is None or end_year is None)
-        mo.stop(int(start_year) < int(end_year))
+        mo.stop(int(start_year) > int(end_year))
         points = get_selected_points()
         if(points is None):
             op_point = get_optimal_point()
@@ -814,9 +810,9 @@ def _(colors, label, point_tuples, popup, table_data, toggle_button, tooltips):
         f'''
         # Select Point for Installation
         {toggle_button}
-    
+
         {label}
-    
+
         {mo.hstack([table_data,_M])}
         '''
     )
@@ -1107,12 +1103,6 @@ def calculate_solar_output_power(irradiance,type,installation):
     return P
 
 
-@app.cell
-def _():
-    mo.md("""# Hybrid System""")
-    return
-
-
 @app.function
 def calculate_solar_for_budget(budget,type):
     best_option = None
@@ -1144,7 +1134,7 @@ def _():
         ['A','B','C','D'],
         label = 'Solar Type',
         value='A',searchable=True)
-    inertial_percentage = mo.ui.slider(0,100,5,label="Intertia Percentage",show_value=True)
+    inertial_percentage = mo.ui.slider(0,100,5,label="Inertia Percentage",show_value=True)
     budget_inert_cal_button = mo.ui.run_button(label='Calculate')
     return Solar_type, budget, budget_inert_cal_button, inertial_percentage
 
@@ -1209,7 +1199,7 @@ def _(
             return WIND_RESTICTED
         return min(wind_restriction,budget_restriction)
 
-    
+
     _best_p = _()        
     output = ''
     if(_best_p > 0):
@@ -1217,14 +1207,14 @@ def _(
         _sp = calculate_solar_output_power(float(selected_data["Solar Power"]),installation=_best_p,type=Solar_type.value)
         _inter = _wp/_sp*100
         output = f'''
-    
+
             |Parameter | Value|
             |---|---|
             |Solar power installation (kW) | {_best_p}|
             |Wind Output (kW)| {_wp:.2f}|
             |Solar Output (kW)| {_sp:.2f}|
             |Inertia Addition (%)| {_inter:.2f}|
-        
+
         '''
     if(_best_p==BUDGET_RESTICTED):
         output = '''## Insufficient Budget!
@@ -1234,7 +1224,7 @@ def _(
         output = '''## Insufficient Intertia Addition!
            The Selected Point doesn't have enough inertia addition for constructing a Hybrid Power Plant. You will need to incorporate additional Points into the system. You can refer to the generated map to select nearby bridges or apropriate wind plant establishment points.
         '''
-    
+
     mo.md(
         f'''
         # Calculated Parameters
