@@ -564,6 +564,31 @@ def _():
 
 @app.cell
 def _(NASA_POWER_API, requests):
+
+    def get_hourly_solar_irradiation(*, latitude, longitude, start_year, end_year):
+        monthly_api = f"{NASA_POWER_API}temporal/hourly/point"
+        parameters = dict(
+            latitude=latitude,
+            longitude=longitude,
+            start=start_year,
+            end=end_year,
+            community="RE",
+            parameters="ALLSKY_SFC_SW_DWN",
+            format="JSON",
+            user="anonymous",
+        )
+        response = requests.get(monthly_api, params=parameters)
+        if response.status_code != 200:
+            raise Exception(
+                f"Error fetching data: {response.status_code} - {response.text}"
+            )
+        data = response.json()
+        return data["properties"]["parameter"]["ALLSKY_SFC_SW_DWN"]
+    return (get_hourly_solar_irradiation,)
+
+
+@app.cell
+def _(NASA_POWER_API, requests):
     def get_wind_data(*, latitude, longitude, start_year, end_year):
         monthly_api = f"{NASA_POWER_API}temporal/monthly/point"
         parameters = dict(
@@ -967,10 +992,28 @@ def solar_cost(solar_type,capacity):
 
 
 @app.cell
-def _(selected_data, solar_cal_button, solar_capacity, solar_type):
+def _(get_hourly_solar_irradiation, np, selected_data, year_form):
+    mo.stop(selected_data is None)
+    with mo.status.spinner("Retreiving Hourly Data"):
+        hourly_solar_data = get_hourly_solar_irradiation(latitude=selected_data['latitude'],longitude=selected_data["longitude"],start_year=year_form.value["start_year"],end_year=year_form.value["end_year"])
+    hourly_solar_data = np.array(list(hourly_solar_data.values()))
+    return (hourly_solar_data,)
+
+
+@app.cell
+def _(
+    calculate_solar_output_power,
+    hourly_solar_data,
+    np,
+    selected_data,
+    solar_cal_button,
+    solar_capacity,
+    solar_type,
+):
     mo.stop(not solar_cal_button.value)
     solar_cost_value = solar_cost(solar_type.value,solar_capacity.value)
-    solar_output_power = calculate_solar_output_power(type=solar_type.value,irradiance=float(selected_data['Solar Power']),installation=solar_capacity.value)
+    solar_output_power = np.mean(calculate_solar_output_power(type=solar_type.value,irradiance=hourly_solar_data,installation=solar_capacity.value)).item()
+
     mo.md(
         f'''
         # Calculated Solar Parameters
@@ -978,7 +1021,7 @@ def _(selected_data, solar_cal_button, solar_capacity, solar_type):
         |**Parameter**|**Value**|
         |---|---|
         |**Total Cost (Rs)**|  **{int(solar_cost_value//1000*1000):,}**|
-        |**Total  Irradiance ($kW/m^2$)**|  **{float(selected_data['Solar Power']):.2f}**|
+        |**Average  Irradiance (GIR) ($kW/m^2$)**|  **{float(selected_data['Solar Power'].iloc[0]):.2f}**|
         |**Total  Estimated Power output ($kW$)**|  **{solar_output_power:.2f}**|
 
         '''
@@ -1095,12 +1138,18 @@ def interpolate_p(df: pd.DataFrame, gir_value: float) -> float:
     return df_ext.loc[gir_value, "P"]
 
 
-@app.function
-def calculate_solar_output_power(irradiance,type,installation):
-    path = mo.notebook_location()/"public"/f"{type}.xlsx"
-    df = pd.read_excel(path,sheet_name=f"{installation}kW")
-    P = interpolate_p(df,irradiance)
-    return P
+@app.cell
+def _():
+    import numpy as np
+    def calculate_solar_output_power(irradiance,type,installation):
+        path = mo.notebook_location()/"public"/f"{type}.xlsx"
+        df = pd.read_excel(path,sheet_name=f"{installation}kW")
+        x = irradiance
+        xp = df['GIR'].to_numpy()
+        yp = df['P'].to_numpy()
+        P = np.interp(x,xp,yp)
+        return P
+    return calculate_solar_output_power, np
 
 
 @app.function
@@ -1114,16 +1163,19 @@ def calculate_solar_for_budget(budget,type):
     return best_option
 
 
-@app.function
-def calculate_max_solar_for_wind(wind_power,type,irradiance,inertia_ratio = 0.15):
-    best_option = None
-    for p in range(10,120+10,10):
-        power = calculate_solar_output_power(
-            irradiance,type,p) 
-        if(power*inertia_ratio > wind_power):
-            return best_option
-        best_option = p
-    return best_option
+@app.cell
+def _(calculate_solar_output_power, np):
+    def calculate_max_solar_for_wind(wind_power,type,irradiance,inertia_ratio = 0.15):
+        best_option = None
+        for p in range(10,120+10,10):
+            power = calculate_solar_output_power(
+                irradiance,type,p) 
+            power = np.mean(power)
+            if(power*inertia_ratio > wind_power):
+                return best_option
+            best_option = p
+        return best_option
+    return (calculate_max_solar_for_wind,)
 
 
 @app.cell
@@ -1177,7 +1229,11 @@ def _(
     Solar_type,
     budget,
     budget_inert_cal_button,
+    calculate_max_solar_for_wind,
+    calculate_solar_output_power,
+    hourly_solar_data,
     inertial_percentage,
+    np,
     selected_data,
     system_type_form,
 ):
@@ -1187,6 +1243,7 @@ def _(
     mo.stop(not budget_inert_cal_button.value)
     BUDGET_RESTICTED = -1
     WIND_RESTICTED = -2
+
     def _():
         wind_power_budget = 6_180_000
         solar_budget = int(budget.value) - wind_power_budget
@@ -1194,7 +1251,7 @@ def _(
         if(budget_restriction is None):
             return BUDGET_RESTICTED
         wind_power = float(selected_data['Wind Power'])
-        wind_restriction = calculate_max_solar_for_wind(wind_power=wind_power,type=Solar_type.value,inertia_ratio=inertial_percentage.value/100,irradiance=float(selected_data['Solar Power']))
+        wind_restriction = calculate_max_solar_for_wind(wind_power=wind_power,type=Solar_type.value,inertia_ratio=inertial_percentage.value/100,irradiance=hourly_solar_data)
         if(wind_restriction is None):
             return WIND_RESTICTED
         return min(wind_restriction,budget_restriction)
@@ -1204,7 +1261,8 @@ def _(
     output = ''
     if(_best_p > 0):
         _wp = float(selected_data["Wind Power"])
-        _sp = calculate_solar_output_power(float(selected_data["Solar Power"]),installation=_best_p,type=Solar_type.value)
+        _sp = calculate_solar_output_power(hourly_solar_data,installation=_best_p,type=Solar_type.value)
+        _sp = np.mean(_sp)
         _inter = _wp/_sp*100
         output = f'''
 
